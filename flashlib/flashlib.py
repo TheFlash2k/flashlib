@@ -176,7 +176,8 @@ def attach(
 
 		Remote will always halt first.
 		"""
-		if (halt and _exe) or remote: input("[?] Attach GDB?")
+		print((halt and _exe))
+		if (halt and _exe) or (remote and args.REMOTE): input("[?] Attach GDB?")
 		gdb.attach(_mode, exe=_exe, gdbscript=gdbscript)
 		if halt and not _exe: input("[?] Continue?")
 
@@ -191,7 +192,7 @@ def get_ctx(
 		exe = _exe.split()
 		cleaned_exe = exe[0]
 
-	if not remote_host:
+	if not remote_host and args.REMOTE:
 		remote_host = parse_host(sys.argv)
 
 	if args.COLLEGE:
@@ -217,7 +218,10 @@ def init(
 	elf         = context.binary = ELF(cleaned_exe)
 	if get_libc and elf.get_section_by_name('.dynamic'):
 		libc        = elf.libc if not libc_path else ELF(libc_path)
-		ctype_libc  = cdll.LoadLibrary(libc.path)
+		try:
+			ctype_libc  = cdll.LoadLibrary(libc.path)
+		except:
+			ctype_libc  = cdll.LoadLibrary('/lib/x86_64-linux-gnu/libc.so.6')
 
 	io = get_ctx(aslr=aslr)
 
@@ -284,12 +288,20 @@ def ret2plt(
 These functions are for challenges where we have to
 guess the random numbers using srand and rand
 """
-ctype_libc = cdll.LoadLibrary(libc.path if globals().get('libc', None) else '/lib/x86_64-linux-gnu/libc.so.6')
+try:
+	ctype_libc = cdll.LoadLibrary(libc.path if globals().get('libc', None) else '/lib/x86_64-linux-gnu/libc.so.6')
+except:
+	ctype_libc = None
+
 def libc_srand(seed: int = ctype_libc.time(0x0)):
-	ctype_libc.srand(seed)
+	if ctype_libc:
+		return ctype_libc.srand(seed)
+	return None
 
 def libc_rand():
-	return ctype_libc.rand()
+	if ctype_libc:
+		return ctype_libc.rand()
+	return None
 
 def logleak(var):
 	frame = inspect.currentframe().f_back
