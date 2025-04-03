@@ -4,84 +4,11 @@
 """
 flashlib - A wrapper around pwntools but also with a few of the functions that I use on a daily basis.
 """
-
-# Since we're always making use of pwntools
-from pwn import *
-
-# We'll also make use of ctypes for libc.srand and libc.rand functions
+from .utils import *
 from ctypes import *
-
-# For enums:
-from enum import Enum
-
-# For adding more functions to existing class
-from functools import wraps
-
-# For getting variable names and other stuff
-import inspect
-
-# https://mgarod.medium.com/dynamically-add-a-method-to-a-class-in-python-c49204b85bd6
-def add_method(cls):
-	def decorator(func):
-		@wraps(func) 
-		def wrapper(self, *args, **kwargs): 
-			return func(self, *args, **kwargs)
-		setattr(cls, func.__name__, wrapper)
-		# Note we are not binding func, but wrapper which accepts self but does exactly the same as func
-		return func # returning func means func can still be used normally
-	return decorator
-
-# This is for my tmux setup
-context.terminal = ["tmux", "splitw", "-h"]
-context.arch = 'amd64'
-context.log_level = 'info'
-
-encode   = lambda e: e if type(e) == bytes else str(e).encode()
-hexleak  = lambda l: int(l[:-1] if (l[-1] == b'\n' or l[-1] == '\n') else l, 16)
-fixleak  = lambda l: unpack((l[:-1] if (l[-1] == b'\n' or l[-1] == '\n') else l).ljust(8, b"\x00"))
-rfixleak = lambda l: unpack((l[:-1] if (l[-1] == b'\n' or l[-1] == '\n') else l).rjust(8, b"\x00"))
-diff_hn  = lambda i, j: ((i - j) % 65536)
-diff_hhn = lambda i, j: ((i - j) % 256)
-mangle   = lambda heap_addr, val: (heap_addr >> 12) ^ val
-func_byte_array_hhn = lambda func_addr: [(func_addr >> (8 * i)) & 0xFF for i in range((func_addr.bit_length() + 7) // 8)]
-func_byte_array_hn  = lambda func_addr: [(func_addr >> (16 * i)) & 0xFFFF for i in range((func_addr.bit_length() + 7) // 16)]
 
 # For later use.
 io = exe = cleaned_exe = libc = elf = ctype_libc = None
-
-def demangle(val: int):
-	"""
-	For heap-based challenges with safe-linking enabled.
-	"""
-	mask = 0xfff << 52
-	while mask:
-		v = val & mask
-		val ^= (v >> 12)
-		mask >>= 12
-	return val
-
-def p24(a):
-	return p32(a)[:-1][::-1]
-
-def p56(a):
-	return p64(a)[:-1][::-1]
-
-def big_p32(a):
-	return p32(a)[::-1]
-
-def big_p64(a):
-	return p64(a)[::-1]
-
-def one_gadget(libc: ELF):
-	"""
-	Extracts one gadgets from an existing libc object.
-	"""
-	base_addr = libc.address
-	info("Extracting one-gadgets for %s with base @ %#x" % (libc.path, base_addr))
-	return [(int(i)+base_addr) for i in subprocess.check_output(['one_gadget', '--raw', '-l1', libc.path]).decode().split(' ')]
-
-def my_fill(data, mod=8, pad_char=b"|"):
-	return encode(data) + encode(pad_char) * (len(encode(data)) % mod)
 
 def create_fmtstr(
 	start: int,
@@ -108,9 +35,12 @@ def create_fmtstr(
 		if rt[:max_len][-1] != specifier else rt[:max_len]
 	return rt.encode()
 
-def validate_tube(comm: pwnlib.tubes = None):
+def validate_tube(comm: pwnlib.tubes = None) -> pwnlib.tubes:
 	"""
 	Simply validates if IO exists in the global namespace.
+
+	comm: pwnlib.tubes
+		The underlying communication/io. If not set, the default `io` is used.
 	"""
 	if comm:
 		return comm
@@ -125,6 +55,9 @@ def pow_solve(comm: pwnlib.tubes = None):
 
 	1. theflash2k/pwn-chal
 	2. pwn.red/jail
+
+	comm: pwnlib.tubes
+		The underlying communication/io. If not set, the default `io` is used.
 	"""
 	io = validate_tube(comm)
 	cmd = io.recvlines(2)[1].decode()
@@ -157,9 +90,28 @@ def attach(
 	gdbpath: str = "/usr/bin/gdb",
 ):
 	"""
+	gdbscript: str
+		The gdbscript that we want to use.
+		Default: ""
+
 	halt: bool
 		Halt and waits for input when attaching gdb.
 		Default: False
+
+	remote: tuple
+		The connection that we can use for remote-debugging
+		session.
+		Default: None (but actually defaults to: ("127.0.0.1", 1234))
+
+	_io: pwnlib.tubes
+		The tube (if there was any before), the gdb will be attached to
+		that. If there aren't any the default `io` will be used.
+		Default: None
+
+	gdbpath: str
+		The underlying path to gdb file that will be used when remote is
+		set.
+		Default: /usr/bin/gdb
 	"""
 
 	io = validate_tube(_io)
@@ -186,7 +138,7 @@ def get_ctx(
 	aslr: bool = False,
 	remote_host: tuple = None,
 	keyfile: str = "~/.ssh/id_rsa"
-):
+) -> pwnlib.tubes:
 	if _exe:
 		global exe, cleaned_exe
 		exe = _exe.split()
@@ -211,7 +163,10 @@ def init(
 	get_libc: bool = True,
 	setup_rop: bool = False,
 	setup_libc_rop: bool = False
-):
+) -> tuple:
+	"""
+	Method that initializes all the internals.
+	"""
 	import importlib
 	global io, exe, cleaned_exe, libc, elf, ctype_libc
 
@@ -266,6 +221,25 @@ def recvafter(
 	keepends: bool = False,
 	timeout: int = pwnlib.timeout.maximum
 ):
+	"""
+	delim: bytes
+		The delimiter till which data will be read and discarded.
+
+	n: int
+		The number of bytes to be read. If not specified, data till newline is read.
+		Default: 0x0
+	
+	drop: bool
+		Whether to drop.
+		Default: True
+
+	keepends: bool
+		Whether to keep the newline or not.
+		Default: False
+
+	timeout: int
+		The maximum waiting time after which connection is closed.
+	"""
 	self.recvuntil(encode(delim), drop=drop, timeout=timeout)
 	return self.recv(n, timeout=timeout) if n else \
 		self.recvline(keepends=keepends, timeout=timeout)
@@ -281,8 +255,54 @@ def recvafteruntil(
 	drop: bool = True,
 	timeout: int = pwnlib.timeout.maximum
 ):
+	"""
+	delim_before: bytes
+		The first delimiter till which connection is received
+
+	delim_after: bytes
+		The second delimiter.
+			The actual data read is between the first and
+			second delimiter (inclusive)
+
+	drop: bool
+		Whether to drop the newline or not.
+		Default: True
+	
+	timeout: int
+		The maximum waiting time after which connection is closed.
+	"""
 	self.recvuntil(encode(delim_before), drop=drop, timeout=timeout)
 	return self.recvuntil(encode(delim_after), drop=drop, timeout=timeout)
+
+@add_method(pwnlib.tubes.process.process)
+@add_method(pwnlib.tubes.remote.remote)
+@add_method(pwnlib.tubes.ssh.ssh)
+@add_method(pwnlib.tubes.ssh.ssh_process)
+def recvbetween(
+	self,
+	delim_before: bytes,
+	delim_after: bytes = b"\n",
+	drop: bool = True,
+	timeout: int = pwnlib.timeout.maximum
+):
+	"""
+	delim_before: bytes
+		The first delimiter till which connection is received
+
+	delim_after: bytes
+		The second delimiter.
+			The actual data read is between the first and
+			second delimiter (exclusive)
+
+	drop: bool
+		Whether to drop the newline or not.
+		Default: True
+	
+	timeout: int
+		The maximum waiting time after which connection is closed.
+	"""
+	self.recvuntil(encode(delim_before), drop=drop, timeout=timeout)
+	return self.recvuntil(encode(delim_after), drop=drop, timeout=timeout)[:-len(delim_after)]
 
 """
 The only reason I am creating classes is because
@@ -414,6 +434,26 @@ def ret2plt(
 
 	return libc.address
 
+def menu(idx: int, delim: bytes = b": ", ln: bool = True, _io: pwnlib.tubes = None):
+	"""
+	idx: int
+		The index that we want to send.
+
+	delim: bytes
+		The delimiter after which we will send idx
+
+	ln: bool
+		Whether to send a newline or not.
+		Default: True
+
+	_io: pwnlib.tubes
+		The underlying communication tube
+		Default: None (`io` is used)
+	"""
+	io = validate_tube(_io)
+	(io.sendlineafter if ln else io.sendafter)(
+		encode(delim), encode(idx))
+
 """
 These functions are for challenges where we have to
 guess the random numbers using srand and rand
@@ -432,23 +472,3 @@ def libc_rand():
 	if ctype_libc:
 		return ctype_libc.rand()
 	error("ctype_libc is not initialized!")
-
-def logleak(var):
-	frame = inspect.currentframe().f_back
-	varname = None
-	for name, value in frame.f_locals.items():
-		if value is var:
-			varname = name
-			break
-	if not varname:
-		# this is for class attributes
-		for obj_name, obj in frame.f_locals.items():
-			if hasattr(obj, "__dict__"):
-				for attr_name, attr_value in vars(obj).items():
-					if attr_value is var:
-						varname = f"{obj_name}.{attr_name[1:] if attr_name[0] == '_' else attr_name}"
-						break
-	if not varname:
-		varname = "leak"
-
-	info(f"%s @ %#x" % (varname, var))
