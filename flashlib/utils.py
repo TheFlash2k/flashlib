@@ -5,6 +5,8 @@ All my utility (small) functions/lambdas
 from pwn import *
 from functools import wraps
 from typing import Any, List
+from tqdm import *
+from enum import Enum
 
 context.terminal = ["tmux", "splitw", "-h"]
 context.arch = 'amd64'
@@ -121,7 +123,7 @@ def fixleak(leak: bytes, padding: bytes = b"\x00") -> int:
 	"""
 	if encode(leak[-1]) == b"\n":
 		leak = leak[:-1]
-	return u64(leak.ljust(8, padding))
+	return unpack(leak.ljust(8, padding))
 	
 def rfixleak(leak: bytes, padding: bytes = b"\x00") -> int:
 	"""
@@ -138,7 +140,7 @@ def rfixleak(leak: bytes, padding: bytes = b"\x00") -> int:
 	"""
 	if encode(leak[-1]) == b"\n":
 		leak = leak[:-1]
-	return u64(leak.rjust(8, padding))
+	return unpack(leak.rjust(8, padding))
 
 def diff_hn(new: int, last: int) -> int:
 	"""
@@ -209,7 +211,7 @@ def big_p24(addr: int) -> bytes:
 	addr: int
         The address you want to convert
 	"""
-	return p32(addr)[:-1][::-1]
+	return p32(addr, endianness='big')[:-1]
 
 def big_p32(addr: int) -> bytes:
 	"""
@@ -218,7 +220,7 @@ def big_p32(addr: int) -> bytes:
 	addr: int
         The address you want to convert
 	"""
-	return p32(addr)[::-1]
+	return p32(addr, endianness='big')
 
 def big_p56(addr: int) -> bytes:
 	"""
@@ -227,7 +229,7 @@ def big_p56(addr: int) -> bytes:
 	addr: int
         The address you want to convert
 	"""
-	return p64(addr)[:-1][::-1]
+	return p64(addr, endianness='big')[:-1]
 
 def big_p64(addr: int) -> bytes:
 	"""
@@ -236,7 +238,7 @@ def big_p64(addr: int) -> bytes:
 	addr: int
         The address you want to convert
 	"""
-	return p64(addr)[::-1]
+	return p64(addr, endianness='big')
 
 def one_gadget(libc: ELF) -> List[int]:
 	"""
@@ -291,3 +293,28 @@ def logleak(var: int):
 		varname = "leak"
 
 	info(f"%s @ %#x" % (varname, var))
+
+def prange(start = 0x0, stop = 0x0, step = 0x1):
+	"""
+	prange simply makes use of tqdm and prints the range
+	"""
+	if start != 0x0 and stop == 0x0:
+		return tqdm(range(start))
+	return tqdm(start, stop, step)
+
+class Limits(Enum):
+	"""
+	The limits of the different data types in C.
+	"""
+	INT_MIN   = -0x80000000
+	INT_MAX   = 0x7FFFFFFF
+	UINT_MIN  = 0x00000000
+	UINT_MAX  = 0xFFFFFFFF
+	LONG_MIN  = -0x8000000000000000
+	LONG_MAX  = 0x7FFFFFFFFFFFFFFF
+	ULONG_MIN = 0x0000000000000000
+	ULONG_MAX = 0xFFFFFFFFFFFFFFFF
+	FLT_MIN   = -3.402823466E+38
+	FLT_MAX   = 3.402823466E+38
+	DBL_MIN   = -1.7976931348623158E+308
+	DBL_MAX   = 1.7976931348623158E+308
