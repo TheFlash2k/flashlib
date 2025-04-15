@@ -4,7 +4,6 @@
 """
 flashlib - A wrapper around pwntools but also with a few of the functions that I use on a daily basis.
 """
-import pwnlib.rop
 from .utils import *
 from ctypes import *
 
@@ -215,7 +214,7 @@ def get_ctx(
 	aslr: bool = True,
 	remote_host: tuple = None,
 	keyfile: str = "~/.ssh/id_rsa",
-	basedir: str = None,
+	remote_basedir: str = None,
 	libc_path: str = None,
 ) -> pwnlib.tubes:
 	
@@ -242,7 +241,7 @@ def get_ctx(
 		The keyfile that will be used for SSH connection (pwn.college only).
 		Default: ~/.ssh/id_rsa
 
-	basedir: str
+	remote_basedir: str
 		The base directory that will be used for the executable
 		when in the context of an SSH connection.
 		Default: None (if None, it will be the current directory)
@@ -314,7 +313,7 @@ def get_ctx(
 		
 		info(f"Authenticating to {host} as {username} with password: {'*'*len(password)}")
 		sh = ssh(user=username, host=host, password=password)
-		io = sh.process(cleaned_exe, cwd=basedir)
+		io = sh.process(cleaned_exe, cwd=remote_basedir)
 	else:
 		io = remote(*remote_host) if args.REMOTE else process(argv=exe, aslr=aslr)
 
@@ -332,6 +331,7 @@ def init(
 	setup_rop: bool = False,
 	setup_libc_rop: bool = False,
 	var_name: str = "io",
+	remote_basedir: str = None,
 ) -> tuple:
 	"""
 	Method that initializes all the internals.
@@ -367,6 +367,11 @@ def init(
 		The variable name that will be used for the io object.
 		Default: io
 
+	remote_basedir: str
+		The base directory that will be used for the executable
+		when in the context of an SSH connection.
+		Default: None (if None, it will be the current directory)
+
 	Returns:
 		A tuple of:
 			- io: pwnlib.tubes
@@ -385,7 +390,7 @@ def init(
 	context.arch = 'amd64'
 
 	_init_base(base_exe, argv, libc_path, get_libc)
-	io = get_ctx(base_exe, argv, aslr, libc_path=libc_path)
+	io = get_ctx(base_exe, argv, aslr, libc_path=libc_path, remote_basedir=remote_basedir)
 
 	# just so that I can use cyclic(N) instead of cyclic(N, n=8)
 	context.cyclic_size = 0x8 if \
@@ -658,7 +663,7 @@ def sender(ln: bool = True, _io: pwnlib.tubes = None):
 		Default: True
 	"""
 	io = validate_tube(_io)
-	return io.sendafter if ln else io.sendlineafter
+	return io.sendafter if not ln else io.sendlineafter
 
 def menu(idx: int, delim: bytes = b"> ", ln: bool = True, _io: pwnlib.tubes = None):
 	"""

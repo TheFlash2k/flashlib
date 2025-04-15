@@ -2,9 +2,9 @@ from setuptools import setup, find_packages
 
 setup(
     name="pwn-flashlib",
-    version="0.1.3",
+    version="0.1.5",
     packages=find_packages(),
-    install_requires=['pwntools'],
+    install_requires=['pwntools', 'tqdm'],
     author="TheFlash2k",
     author_email="alitaqi2000@gmail.com",
     description="A wrapper around pwntools but also with a few of the functions that I use on a daily basis.",
