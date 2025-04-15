@@ -8,7 +8,7 @@ from .utils import *
 from ctypes import *
 
 # For later use.
-io = exe = cleaned_exe = libc = elf = e = rop = rop_libc = ctype_libc = None
+io = exe = cleaned_exe = libc = elf = e = rop = rop_libc = ctype_libc = ssh_io = None
 
 def create_fmtstr(
 	start: int,
@@ -192,7 +192,7 @@ def _init_base(
 	except:
 		context.arch = 'amd64'
 		elf = None
-	if get_libc and elf and elf.get_section_by_name('.dynamic'):
+	if get_libc and elf and elf.get_section_by_name('.dynamic') and os.name != 'nt':
 		libc = elf.libc if not libc_path else ELF(libc_path)
 		try:
 			ctype_libc = cdll.LoadLibrary(libc.path)
@@ -203,7 +203,7 @@ def _init_base(
 	caller_globals = sys._getframe(2).f_globals # depth is 2 because it's always invoked by another func
 	caller_globals.update({'exe': exe, 'e': elf, 'elf': elf, 'cleaned_exe': cleaned_exe})
 	sys.modules[__name__].__dict__.update({'exe': exe, 'elf': elf, 'cleaned_exe': cleaned_exe})
-	if get_libc:
+	if get_libc and os.name != 'nt':
 		caller_globals.update({'libc': libc, 'ctype_libc': ctype_libc})
 
 	return exe, cleaned_exe, libc, elf, ctype_libc
@@ -258,7 +258,7 @@ def get_ctx(
 		./exploit.py SSH username:password@host:port
 		./exploit.py SSH root:root@localhost:22
 	"""
-	global io, elf
+	global io, elf, ssh_io
 
 	if not io and not elf:
 		"""
@@ -312,14 +312,16 @@ def get_ctx(
 			error("No username or host specified with SSH")
 		
 		info(f"Authenticating to {host} as {username} with password: {'*'*len(password)}")
-		sh = ssh(user=username, host=host, password=password)
-		io = sh.process(cleaned_exe, cwd=remote_basedir)
+		ssh_io = ssh(user=username, host=host, password=password)
+		io = ssh_io.process(cleaned_exe, cwd=remote_basedir)
+	elif args.REMOTE:
+		io = remote(*remote_host)
 	else:
-		io = remote(*remote_host) if args.REMOTE else process(argv=exe, aslr=aslr)
+		io = process(argv=exe, aslr=aslr)
 
-	sys._getframe(1).f_globals.update({'io': io})
-	sys._getframe(2).f_globals.update({'io': io})
-	sys.modules[__name__].__dict__.update({'io': io})
+	sys._getframe(1).f_globals.update({'io': io, 'ssh_io': ssh_io})
+	sys._getframe(2).f_globals.update({'io': io, 'ssh_io': ssh_io})
+	sys.modules[__name__].__dict__.update({'io': io, 'ssh_io': ssh_io})
 	return io
 
 def init(
@@ -690,17 +692,18 @@ These functions are for challenges where we have to
 guess the random numbers using srand and rand
 """
 try:
-	ctype_libc = cdll.LoadLibrary(libc.path if globals().get('libc', None) else '/lib/x86_64-linux-gnu/libc.so.6')
+	if os.name != 'nt':
+		ctype_libc = cdll.LoadLibrary(libc.path if globals().get('libc', None) else '/lib/x86_64-linux-gnu/libc.so.6')
 except:
 	ctype_libc = None
 
-def libc_srand(seed: int = ctype_libc.time(0x0)):
-	if ctype_libc:
+def libc_srand(seed: int = (ctype_libc.time(0x0) if ctype_libc else 0x0)):
+	if ctype_libc and os.name != 'nt':
 		return ctype_libc.srand(seed)
 	error("ctype_libc is not initialized!")
 
 def libc_rand():
-	if ctype_libc:
+	if ctype_libc and os.name != 'nt':
 		return ctype_libc.rand()
 	error("ctype_libc is not initialized!")
 
