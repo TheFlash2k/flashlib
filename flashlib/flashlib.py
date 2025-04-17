@@ -835,10 +835,10 @@ def fmt_parse_leaks(
 	leaks = io.recvuntil(encode(end)) if end \
 		else io.recvline()
 
+	leaks = leaks.split(delim)
+
 	if encode(leaks[-1]) == b"\n":
 		leaks = leaks[:-1]
-
-	leaks = leaks.split(delim)
 
 	if convert:
 		leaks = [hexleak(leak) for leak in leaks]
