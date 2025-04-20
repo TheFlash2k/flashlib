@@ -268,6 +268,18 @@ def my_fill(data: bytes, mod: int = 0x8, pad_char: bytes = b"|") -> bytes:
 	"""
 	return encode(data) + encode(pad_char) * (len(encode(data)) % mod)
 
+def chunkify(data: bytes, n: int) -> list:
+	"""
+	Converts data into a list, each index of size n
+
+	data: bytes
+		This data can be bytes or a string data.
+
+	n: int
+		The size of each index
+	"""
+	return [data[i:i + n] for i in range(0, len(data), n)]
+
 def logleak(var: int):
 	import inspect
 	"""

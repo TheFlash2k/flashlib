@@ -76,8 +76,8 @@ def pow_solve(comm: pwnlib.tubes = None, raw_exec: bool = False, delim: str = ":
 	_pow = os.popen(cmd).read()
 	_pow = _pow.split(': ')[1] if ': ' in _pow else _pow # pwn-chal
 	info(f"Solved Proof-of-work: {_pow}")
-	io.sendlineafter(encode(delim), encode(_pow)) if delim else \
-		io.sendline(encode(_pow))
+	io.sendafter(encode(delim), encode(_pow)) if delim else \
+		io.send(encode(_pow))
 
 
 def parse_host(args: list):
@@ -209,13 +209,14 @@ def _init_base(
 	return exe, cleaned_exe, libc, elf, ctype_libc
 
 def get_ctx(
-	_exe: str,
+	_exe: str = None,
 	argv: list = None,
 	aslr: bool = True,
 	remote_host: tuple = None,
 	keyfile: str = "~/.ssh/id_rsa",
 	remote_basedir: str = None,
 	libc_path: str = None,
+	ssl:bool = False,
 ) -> pwnlib.tubes:
 	
 	"""
@@ -246,6 +247,10 @@ def get_ctx(
 		when in the context of an SSH connection.
 		Default: None (if None, it will be the current directory)
 
+	ssl: bool
+		Set the SSL Context when making a remote connection
+		Default: False
+
 	Examples:
 
 		*SSH*:
@@ -260,7 +265,7 @@ def get_ctx(
 	"""
 	global io, elf, ssh_io
 
-	if not io and not elf:
+	if not io and not elf and _exe:
 		"""
 		added to remove dependency on always invoking
 		init function.
@@ -315,12 +320,13 @@ def get_ctx(
 		ssh_io = ssh(user=username, host=host, password=password)
 		io = ssh_io.process(cleaned_exe, cwd=remote_basedir)
 	elif args.REMOTE:
-		io = remote(*remote_host)
+		io = remote(*remote_host, ssl=ssl)
 	else:
 		io = process(argv=exe, aslr=aslr)
 
 	sys._getframe(1).f_globals.update({'io': io, 'ssh_io': ssh_io})
-	sys._getframe(2).f_globals.update({'io': io, 'ssh_io': ssh_io})
+	try: sys._getframe(2).f_globals.update({'io': io, 'ssh_io': ssh_io})
+	except: pass
 	sys.modules[__name__].__dict__.update({'io': io, 'ssh_io': ssh_io})
 	return io
 
@@ -334,6 +340,7 @@ def init(
 	setup_libc_rop: bool = False,
 	var_name: str = "io",
 	remote_basedir: str = None,
+	ssl: bool = False
 ) -> tuple:
 	"""
 	Method that initializes all the internals.
@@ -374,6 +381,9 @@ def init(
 		when in the context of an SSH connection.
 		Default: None (if None, it will be the current directory)
 
+	ssl: bool
+		Set the SSL context when making a remote connection
+
 	Returns:
 		A tuple of:
 			- io: pwnlib.tubes
@@ -392,7 +402,7 @@ def init(
 	context.arch = 'amd64'
 
 	_init_base(base_exe, argv, libc_path, get_libc)
-	io = get_ctx(base_exe, argv, aslr, libc_path=libc_path, remote_basedir=remote_basedir)
+	io = get_ctx(base_exe, argv, aslr, libc_path=libc_path, remote_basedir=remote_basedir, ssl=ssl)
 
 	# just so that I can use cyclic(N) instead of cyclic(N, n=8)
 	context.cyclic_size = 0x8 if \
