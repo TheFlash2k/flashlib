@@ -18,8 +18,7 @@ def create_fmtstr(
 	max_len: int = -1,
 	with_index: bool = False,
 	specifier: str = "p",
-	seperator: str = '|'
-) -> bytes:
+	seperator: str = '|') -> bytes:
 	"""
 	Creates a format string that we can use to fuzz and check at
 	what index what data exists.
@@ -134,7 +133,7 @@ def attach(
 	"""
 
 	io = validate_tube(_io)
-	gdbscript = (f"file {cleaned_exe}\n" if args.REMOTE else "") + gdbscript
+	gdbscript = (f"file {cleaned_exe}\n" if (args.REMOTE or has_qemu) else "") + gdbscript
 	_exe, _mode = (None, io) if not remote else (exe, remote)
 
 	if multiarch:
@@ -279,7 +278,7 @@ def get_ctx(
 		./exploit.py SSH username:password@host:port
 		./exploit.py SSH root:root@localhost:22
 	"""
-	global io, elf, ssh_io, has_qemu
+	global io, elf, ssh_io, has_qemu, exe
 
 	if not io and not elf and _exe:
 		"""
