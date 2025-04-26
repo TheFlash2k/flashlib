@@ -57,8 +57,8 @@ def ptr_demangle(addr: int, secret: int, rot: int = 0x11) -> int:
 		This is found inside TLS [FS:0x30].
 
 	rot: int
-        The rotation amount.
-        Default: 0x11
+		The rotation amount.
+		Default: 0x11
 	"""
 	return ror(addr, rot) ^ secret
 
@@ -312,7 +312,7 @@ def prange(start = 0x0, stop = 0x0, step = 0x1):
 	"""
 	if start != 0x0 and stop == 0x0:
 		return tqdm(range(start))
-	return tqdm(start, stop, step)
+	return tqdm(range(start, stop, step))
 
 class Limits(Enum):
 	"""

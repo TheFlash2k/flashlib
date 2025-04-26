@@ -9,6 +9,7 @@ from ctypes import *
 
 # For later use.
 io = exe = cleaned_exe = libc = elf = e = rop = rop_libc = ctype_libc = ssh_io = None
+has_qemu = False
 
 def create_fmtstr(
 	start: int,
@@ -217,6 +218,9 @@ def get_ctx(
 	remote_basedir: str = None,
 	libc_path: str = None,
 	ssl:bool = False,
+	qemu: str = None,
+	qemu_lib: str = None,
+	qemu_debug_port: int = None,
 ) -> pwnlib.tubes:
 	
 	"""
@@ -251,6 +255,18 @@ def get_ctx(
 		Set the SSL Context when making a remote connection
 		Default: False
 
+	qemu: str
+		Set the QEMU binary that will be used for the executable.
+		Default: None
+
+	qemu_lib: str
+		Set the directory of the libraries that will be used for the executable.
+		Default: None
+
+	qemu_debug_port: int
+		Set the debug port that will be used for the executable.
+		Default: None
+
 	Examples:
 
 		*SSH*:
@@ -263,7 +279,7 @@ def get_ctx(
 		./exploit.py SSH username:password@host:port
 		./exploit.py SSH root:root@localhost:22
 	"""
-	global io, elf, ssh_io
+	global io, elf, ssh_io, has_qemu
 
 	if not io and not elf and _exe:
 		"""
@@ -278,7 +294,7 @@ def get_ctx(
 	if args.COLLEGE:
 		# for all my pwn-college enthuiasts:
 		sh = ssh(user="hacker", host="dojo.pwn.college", keyfile=keyfile)
-		io = sh.process(f"/challenge/{cleaned_exe}", cwd=basedir)
+		io = sh.process(f"/challenge/{cleaned_exe}", cwd=remote_basedir)
 	elif args.SSH:
 		username = password = host = None
 		port = 22
@@ -322,12 +338,23 @@ def get_ctx(
 	elif args.REMOTE:
 		io = remote(*remote_host, ssl=ssl)
 	else:
+		if qemu:
+			info(f"Using QEMU with {cleaned_exe}")
+			has_qemu = True
+			exe = f"{qemu}"
+			if qemu_lib:
+				exe += f" -L {qemu_lib}"
+			if (qemu_debug_port and args.GDB) or (not qemu_debug_port and args.GDB):
+				if not qemu_debug_port: qemu_debug_port = 1234
+				exe += f" -g {qemu_debug_port}"
+			exe += f" {_exe}"
+			exe = exe.split()
 		io = process(argv=exe, aslr=aslr)
 
-	sys._getframe(1).f_globals.update({'io': io, 'ssh_io': ssh_io})
-	try: sys._getframe(2).f_globals.update({'io': io, 'ssh_io': ssh_io})
+	sys._getframe(1).f_globals.update({'io': io, 'ssh_io': ssh_io, 'has_qemu': has_qemu})
+	try: sys._getframe(2).f_globals.update({'io': io, 'ssh_io': ssh_io, 'has_qemu': has_qemu})
 	except: pass
-	sys.modules[__name__].__dict__.update({'io': io, 'ssh_io': ssh_io})
+	sys.modules[__name__].__dict__.update({'io': io, 'ssh_io': ssh_io, 'has_qemu': has_qemu})
 	return io
 
 def init(
@@ -340,7 +367,10 @@ def init(
 	setup_libc_rop: bool = False,
 	var_name: str = "io",
 	remote_basedir: str = None,
-	ssl: bool = False
+	ssl: bool = False,
+	qemu: str = None,
+	qemu_lib: str = None,
+	qemu_debug_port: int = None
 ) -> tuple:
 	"""
 	Method that initializes all the internals.
@@ -384,6 +414,9 @@ def init(
 	ssl: bool
 		Set the SSL context when making a remote connection
 
+	qemu: str
+		Set the QEMU binary that will be used for the executable.
+
 	Returns:
 		A tuple of:
 			- io: pwnlib.tubes
@@ -402,11 +435,12 @@ def init(
 	context.arch = 'amd64'
 
 	_init_base(base_exe, argv, libc_path, get_libc)
-	io = get_ctx(base_exe, argv, aslr, libc_path=libc_path, remote_basedir=remote_basedir, ssl=ssl)
+	
+	io = get_ctx(base_exe, argv, aslr, libc_path=libc_path, remote_basedir=remote_basedir, ssl=ssl, qemu=qemu, qemu_lib=qemu_lib, qemu_debug_port=qemu_debug_port)
 
 	# just so that I can use cyclic(N) instead of cyclic(N, n=8)
 	context.cyclic_size = 0x8 if \
-		context.arch == 'amd64' else 0x4
+		(context.arch == 'amd64' or context.arch == 'aarch64') else 0x4
 
 	rt = [io, elf]
 	if get_libc: rt.append(libc)
