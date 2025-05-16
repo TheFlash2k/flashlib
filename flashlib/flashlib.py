@@ -334,7 +334,7 @@ def get_ctx(
 		info(f"Authenticating to {host} as {username} with password: {'*'*len(password)}")
 		ssh_io = ssh(user=username, host=host, password=password)
 		io = ssh_io.process(cleaned_exe, cwd=remote_basedir)
-	elif args.REMOTE:
+	elif args.REMOTE or remote_host:
 		io = remote(*remote_host, ssl=ssl)
 	else:
 		if qemu:
@@ -880,10 +880,11 @@ def fmt_parse_leaks(
 
 	leaks = leaks.split(delim)
 
-	if encode(leaks[-1]) == b"\n":
+	if encode(leaks[-1]) == encode(end):
 		leaks = leaks[:-1]
 
 	if convert:
 		leaks = [hexleak(leak) for leak in leaks]
 
 	return leaks
+
