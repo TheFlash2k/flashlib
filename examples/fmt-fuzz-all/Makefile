@@ -1,5 +1,5 @@
-CHALLENGE := basic-rop
-FLAGS := -fno-stack-protector -no-pie -w
+CHALLENGE := fmt-fuzz-all
+FLAGS := -w
 all: compile build run
 compile:
 	gcc -o $(CHALLENGE) $(FLAGS) $(CHALLENGE).c

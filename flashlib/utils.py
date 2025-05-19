@@ -7,6 +7,7 @@ from functools import wraps
 from typing import Any, List
 from tqdm import *
 from enum import Enum
+from collections.abc import Callable
 
 context.terminal = ["tmux", "splitw", "-h"]
 context.arch = 'amd64'
