@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="pwn-flashlib",
-    version="0.1.78",
+    version="0.1.79",
     packages=find_packages(),
     install_requires=['pwntools', 'tqdm'],
     author="TheFlash2k",

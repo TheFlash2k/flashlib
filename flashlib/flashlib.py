@@ -314,7 +314,7 @@ def get_ctx(
 			error("No username or host specified with SSH")
 		
 		info(f"Authenticating to {host} as {username} with password: {'*'*len(password)}")
-		ssh_io = ssh(user=username, host=host, password=password)
+		ssh_io = ssh(user=username, host=host, password=password, port=port)
 		io = ssh_io.process(cleaned_exe, cwd=remote_basedir)
 	elif args.REMOTE or remote_host:
 		io = remote(*remote_host, ssl=ssl)
