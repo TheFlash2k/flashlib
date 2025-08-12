@@ -810,7 +810,7 @@ def sh_rop(offset: int = None, POPRDI_RET: int = None, system: int = None, sh: i
 				if debug:
 					info("Getting ROP from elf")
 				rop = ROP(e)
-			POPRDI_RET = rop.find_gadget(['pop rdi', 'ret'])[0]
+			POPRDI_RET = rop.find_gadget(['pop rdi', 'ret'])
 			if not POPRDI_RET:
 				if debug: warn("No POP RDI found in ELF. Trying libc...")
 				_found = False
@@ -821,7 +821,10 @@ def sh_rop(offset: int = None, POPRDI_RET: int = None, system: int = None, sh: i
 				if debug:
 					info("Getting ROP from libc")
 				rop_libc = ROP(libc)
-			POPRDI_RET = rop_libc.find_gadget(['pop rdi', 'ret'])[0]
+			POPRDI_RET = rop_libc.find_gadget(['pop rdi', 'ret'])
+			if not POPRDI_RET:
+				error("No POP RDI found in LIBC. Please provide it yourself")
+			POPRDI_RET = POPRDI_RET[0]
 				
 		if not POPRDI_RET:
 			error("No POP RDI found in ELF or libc. Please specify it manually.")
@@ -983,7 +986,7 @@ def fmt_fuzz_all(
 	sendafter: str
 		The value that is passed to the `sendafter/sendlineafter` function as the delimiter.
 		Default: ""
-	
+
 	show_all: bool
 		In normal scenarios, if we get '(nil)' or '(null)' as output, it won't be displayed,
 		that particular index will be ignored all together. To view that, set this to True
@@ -1026,17 +1029,18 @@ def fmt_fuzz_all(
 
 				tmp = ctx.recvbetween(delimiter, delimiter)
 				if (tmp != b'(null)' and tmp != b"(nil)") or show_all:
-					res[spec] = tmp	
+					res[spec] = tmp
 					if spec.lower() in unhex_specifiers:
 						if "unhex" not in res.keys():
 							res["unhex"] = {}
-						
+
 						if res[spec][:2] == b"0x":
 							res[spec] = res[spec][2:]
 
 						try:
 							uh = unhex(res[spec].decode('latin-1'))[::-1]
-						except:
+						except Exception as E:
+							print(f"Error: {E}")
 							uh = '[ERROR]'
 
 						if res[spec] != b'(nil)':
