@@ -42,8 +42,8 @@ def ptr_mangle(addr: int, secret: int, rot: int = 0x11) -> int:
 		This is found inside TLS [FS:0x30].
 
 	rot: int
-        The rotation amount.
-        Default: 0x11
+		The rotation amount.
+		Default: 0x11
 	"""
 	return rol(addr ^ secret, rot)
 
@@ -98,11 +98,11 @@ def mangle(heap_addr: int, val: int) -> int:
 	"""
 	Safe-links the val at heap_addr
 
-    heap_addr: int
-        The address of the chunk that will be mangled
+	heap_addr: int
+		The address of the chunk that will be mangled
 		
 	val: int
-        The value that will be mangled.
+		The value that will be mangled.
 	"""
 	return (heap_addr >> 12) ^ val
 
@@ -112,7 +112,7 @@ def demangle(val: int):
 	to work properly, otherwise, we must use `reveal_ptr`
 
 	val: int
-        The value that will be used for safelinking demangling
+		The value that will be used for safelinking demangling
 	"""
 	mask = 0xfff << 52
 	while mask:
@@ -124,7 +124,7 @@ def demangle(val: int):
 def encode(buf: Any) -> bytes:
 	"""
 	buf: Any
-        The buffer that you want to encode.
+		The buffer that you want to encode.
 		If it's in bytes, it is returned as is,
 		if not, it is converted to a string and then
 		encoded.
@@ -134,10 +134,10 @@ def encode(buf: Any) -> bytes:
 def hexleak(leak: bytes) -> int:
 	"""
 	leak: bytes
-        Converts a leak in bytes into an integer.
+		Converts a leak in bytes into an integer.
 		
 		Examples:
-            hexleak(b"0x4141414141") would return 280267669825
+			hexleak(b"0x4141414141") would return 280267669825
 		
 		> It automatically removes newline if there are any.
 	"""
@@ -147,15 +147,15 @@ def hexleak(leak: bytes) -> int:
 
 def fixleak(leak: bytes, padding: bytes = b"\x00") -> int:
 	"""
-    leak: bytes
-        Converts raw leaked bytes into an integer.
+	leak: bytes
+		Converts raw leaked bytes into an integer.
 	
 	padding:
-        The character that will be used as padding.
+		The character that will be used as padding.
 		Default: 0x0 (NULL)
 		
-    Example:
-        fixleak(b"\x00\x41\x24\x26\x42") would return 1109795905
+	Example:
+		fixleak(b"\x00\x41\x24\x26\x42") would return 1109795905
 			
 	"""
 	if encode(leak[-1]) == b"\n":
@@ -164,14 +164,14 @@ def fixleak(leak: bytes, padding: bytes = b"\x00") -> int:
 	
 def rfixleak(leak: bytes, padding: bytes = b"\x00") -> int:
 	"""
-    leak: bytes
-        Converts raw leaked bytes into an integer.
+	leak: bytes
+		Converts raw leaked bytes into an integer.
 	
 	padding:
-        The character that will be used as padding.
+		The character that will be used as padding.
 		Default: 0x0 (NULL)
 		
-    The difference between this and fixleak is
+	The difference between this and fixleak is
 	that fixleak appends to left, and this appends
 	to the right.
 	"""
@@ -181,45 +181,45 @@ def rfixleak(leak: bytes, padding: bytes = b"\x00") -> int:
 
 def diff_hn(new: int, last: int) -> int:
 	"""
-    new: int
-        The new value that needs to be written at the address.
+	new: int
+		The new value that needs to be written at the address.
 		
 	last: int
-        The last value that already exists at the address.
+		The last value that already exists at the address.
 	"""
 	return (new - last) % 65536
 
 def diff_hhn(new: int, last: int) -> int:
 	"""
-    new: int
-        The new value that needs to be written at the address.
+	new: int
+		The new value that needs to be written at the address.
 		
 	last: int
-        The last value that already exists at the address.
+		The last value that already exists at the address.
 	"""
 	return (new - last) % 256
 
 def func_byte_array_hhn(func_addr: int) -> List[int]:
 	"""
 	func_addr: int
-        Takes in an address and divides it into a list
+		Takes in an address and divides it into a list
 		which contains 1-byte at each index.
 		
 	Example:
-        func_addr(0x41424344)
-            would return: [0x44, 0x43, 0x42, 0x41]
+		func_addr(0x41424344)
+			would return: [0x44, 0x43, 0x42, 0x41]
 	"""
 	return [(func_addr >> (8 * i)) & 0xFF for i in range((func_addr.bit_length() + 7) // 8)]
 
 def func_byte_array_hn(func_addr: int) -> List[int]:
 	"""
 	func_addr: int
-        Takes in an address and divides it into a list
+		Takes in an address and divides it into a list
 		which contains 2-bytes at each index.
 		
 	Example:
-        func_addr(0x4142434445464748)
-            would return: [0x4748, 0x4546, 0x4344, 0x4142]
+		func_addr(0x4142434445464748)
+			would return: [0x4748, 0x4546, 0x4344, 0x4142]
 	"""
 	return [(func_addr >> (16 * i)) & 0xFFFF for i in range((func_addr.bit_length() + 7) // 16)]
 
@@ -228,7 +228,7 @@ def p24(addr: int) -> bytes:
 	Converts an address to 24-bits
 		
 	addr: int
-        The address you want to convert
+		The address you want to convert
 	"""
 	return p32(addr)[:-1]
 
@@ -237,7 +237,7 @@ def p56(addr: int) -> bytes:
 	Converts an address to 56-bits
 		
 	addr: int
-        The address you want to convert
+		The address you want to convert
 	"""
 	return p64(addr)[:-1]
 
@@ -246,7 +246,7 @@ def big_p24(addr: int) -> bytes:
 	Converts an address to 24-bits in Big Endian
 
 	addr: int
-        The address you want to convert
+		The address you want to convert
 	"""
 	return p32(addr, endianness='big')[:-1]
 
@@ -255,7 +255,7 @@ def big_p32(addr: int) -> bytes:
 	Converts an address to 32-bits in Big Endian
 		
 	addr: int
-        The address you want to convert
+		The address you want to convert
 	"""
 	return p32(addr, endianness='big')
 
@@ -264,7 +264,7 @@ def big_p56(addr: int) -> bytes:
 	Converts an address to 56-bits in Big Endian
 	
 	addr: int
-        The address you want to convert
+		The address you want to convert
 	"""
 	return p64(addr, endianness='big')[:-1]
 
@@ -273,7 +273,7 @@ def big_p64(addr: int) -> bytes:
 	Converts an address to 64-bits in Big Endian
 		
 	addr: int
-        The address you want to convert
+		The address you want to convert
 	"""
 	return p64(addr, endianness='big')
 
@@ -282,7 +282,7 @@ def one_gadget(libc: ELF) -> List[int]:
 	Extracts one gadgets from an existing libc object.
 	
 	libc: ELF
-        The ELF object of libc
+		The ELF object of libc
 	"""
 	base_addr = libc.address
 	info("Extracting one-gadgets for %s with base @ %#x" % (libc.path, base_addr))
@@ -293,15 +293,15 @@ def my_fill(data: bytes, mod: int = 0x8, pad_char: bytes = b"|") -> bytes:
 	Does padding to fill the data to be a modulus of `mod`
 	
 	data:
-        The data that you want pad
+		The data that you want pad
 		
 	mod:
-        The modulus of which the lenght of `data` will be.
+		The modulus of which the lenght of `data` will be.
 		Default: 0x8
 		
 	pad_char:
-        The character that will be used as padding.
-        Default: |
+		The character that will be used as padding.
+		Default: |
 	"""
 	return encode(data) + encode(pad_char) * (len(encode(data)) % mod)
 
@@ -320,8 +320,8 @@ def chunkify(data: bytes, n: int) -> list:
 def logleak(var: int):
 	import inspect
 	"""
-    var: int
-        Fetches the variable name and prints it as:
+	var: int
+		Fetches the variable name and prints it as:
 		<name> @ %#x <value>
 	"""
 	frame = inspect.currentframe().f_back
@@ -358,7 +358,7 @@ def from_float(val: str) -> int:
 	val: str
 		A hexadecimal string representing a float value
 	"""
-    return u32(struct.pack('f', float.fromhex(val)))[2:]
+	return u32(struct.pack('f', float.fromhex(val)))[2:]
 
 def to_float(val: int) -> float:
 	"""
@@ -367,7 +367,7 @@ def to_float(val: int) -> float:
 	val: int
 		An integer that we want to convert.
 	"""
-    return struct.unpack('f', struct.pack('I', val))[0]
+	return struct.unpack('f', struct.pack('I', val))[0]
 
 class Limits(Enum):
 	"""
