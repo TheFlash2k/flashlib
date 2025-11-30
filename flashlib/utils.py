@@ -64,7 +64,7 @@ def ptr_demangle(addr: int, secret: int, rot: int = 0x11) -> int:
 
 """
 #define PROTECT_PTR(pos, ptr) \
-  ((__typeof (ptr)) ((((size_t) pos) >> 12) ^ ((size_t) ptr)))
+	((__typeof (ptr)) ((((size_t) pos) >> 12) ^ ((size_t) ptr)))
 #define REVEAL_PTR(ptr)  PROTECT_PTR (&ptr, ptr)
 """
 def protect_ptr(pos: int, ptr: int) -> int:
@@ -160,7 +160,7 @@ def fixleak(leak: bytes, padding: bytes = b"\x00") -> int:
 	"""
 	if encode(leak[-1]) == b"\n":
 		leak = leak[:-1]
-	return unpack(leak.ljust(8, padding))
+	return unpack(leak.ljust(context.bits//8, padding))
 	
 def rfixleak(leak: bytes, padding: bytes = b"\x00") -> int:
 	"""
@@ -177,7 +177,7 @@ def rfixleak(leak: bytes, padding: bytes = b"\x00") -> int:
 	"""
 	if encode(leak[-1]) == b"\n":
 		leak = leak[:-1]
-	return unpack(leak.rjust(8, padding))
+	return unpack(leak.rjust(context.bits//8, padding))
 
 def diff_hn(new: int, last: int) -> int:
 	"""
@@ -317,6 +317,19 @@ def chunkify(data: bytes, n: int) -> list:
 	"""
 	return [data[i:i + n] for i in range(0, len(data), n)]
 
+def logleak(name: str, val: int):
+	"""
+	Nobodyisnobody's logleak (Mine is just better tbh xd)
+
+	name: str
+		Name of the variable to be printed.
+
+	val: int
+		The actual integer value that will be printed
+	"""
+	info("%s = %#x", (name, val))
+
+
 def logleak(var: int):
 	import inspect
 	"""
@@ -369,6 +382,22 @@ def to_float(val: int) -> float:
 	"""
 	return struct.unpack('f', struct.pack('I', val))[0]
 
+def to_signed(n, bits=32):
+	"""
+	converts a number to it's signed equivalent
+
+	n: int
+		The integer we want to convert
+
+	bits: int
+		The number of bits (Default: 32)
+	"""
+	mask = (1 << bits) - 1
+	n &= mask
+	if n & (1 << (bits - 1)):
+		n -= (1 << bits)
+	return n
+	
 class Limits(Enum):
 	"""
 	The limits of the different data types in C.

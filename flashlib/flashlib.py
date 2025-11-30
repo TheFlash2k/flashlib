@@ -23,6 +23,9 @@ def validate_tube(comm: pwnlib.tubes = None) -> pwnlib.tubes:
 		return comm
 	_io = globals().get('io', None)
 	if not _io:
+		p = globals().get('p', None)
+		if p:
+			return p
 		error("No tube for communication specified!")
 	return _io
 
@@ -197,6 +200,9 @@ def get_ctx(
 	qemu_lib: str = None,
 	qemu_debug_port: int = None,
 	only_remote: bool = False,
+	as_gdb_proc: bool = False,
+	gdbscript: str    = None,
+	**kwargs
 ) -> pwnlib.tubes:
 	
 	"""
@@ -247,7 +253,18 @@ def get_ctx(
 		We are not given a binary but a remote only (blind).
 		Default: False
 
+	as_gdb_proc: bool
+		Running the binary using `gdb.debug` rather than `gdb.attach`
+		Default: False
+
+	gdbscript: str
+		Only required and useful when using as_gdb_proc.
+		Default: None
+
 	Examples:
+
+		*GDBDEBUG*:
+		> This will utilize GDB to run gdb.debug and override the normal `process`.
 
 		*SSH*:
 		> If both keyfile and password are specified, keyfile is checked, if it exists, it is used,
@@ -315,9 +332,11 @@ def get_ctx(
 		
 		info(f"Authenticating to {host} as {username} with password: {'*'*len(password)}")
 		ssh_io = ssh(user=username, host=host, password=password, port=port)
-		io = ssh_io.process(cleaned_exe, cwd=remote_basedir)
+		io = ssh_io.process(cleaned_exe, cwd=remote_basedir, **kwargs)
 	elif args.REMOTE or remote_host:
-		io = remote(*remote_host, ssl=ssl)
+		io = remote(*remote_host, ssl=ssl, **kwargs)
+	elif args.GDBDEBUG or as_gdb_proc:
+		io = gdb.debug(exe, aslr=aslr, **kwargs)
 	else:
 		if qemu:
 			info(f"Using QEMU with {cleaned_exe}")
@@ -330,7 +349,7 @@ def get_ctx(
 				exe += f" -g {qemu_debug_port}"
 			exe += f" {_exe}"
 			exe = exe.split()
-		io = process(argv=exe, aslr=aslr)
+		io = process(argv=exe, aslr=aslr, **kwargs)
 
 	sys._getframe(1).f_globals.update({'io': io, 'ssh_io': ssh_io, 'has_qemu': has_qemu})
 	try: sys._getframe(2).f_globals.update({'io': io, 'ssh_io': ssh_io, 'has_qemu': has_qemu})
@@ -353,6 +372,9 @@ def init(
 	qemu_lib: str = None,
 	qemu_debug_port: int = None,
 	only_remote: bool = False,
+	as_gdb_proc: bool = False,
+	gdbscript: str = None,
+	**kwargs
 ) -> tuple:
 	"""
 	Method that initializes all the internals.
@@ -402,6 +424,10 @@ def init(
 	only_remote: bool
 		In case there's no local connection.
 
+	as_gdb_proc: bool
+		Return the actual process as a GDB ran binary (gdb.debug and not gdb.attach)
+		Default: False
+
 	Returns:
 		A tuple of:
 			- io: pwnlib.tubes
@@ -427,7 +453,12 @@ def init(
 		ssl=ssl,
 		qemu=qemu,
 		qemu_lib=qemu_lib,
-		qemu_debug_port=qemu_debug_port, only_remote=only_remote)
+		qemu_debug_port=qemu_debug_port,
+		only_remote=only_remote,
+		as_gdb_proc=as_gdb_proc,
+		gdbscript=gdbscript,
+		**kwargs
+	)
 
 	# just so that I can use cyclic(N) instead of cyclic(N, n=8)
 	context.cyclic_size = 0x8 if \
@@ -444,8 +475,8 @@ def init(
 		rop_libc = ROP(libc)
 		rt.append(rop_libc)
 
-	sys._getframe(1).f_globals.update({var_name: io, 'rop_libc': rop_libc, 'rop': rop})
-	sys.modules[__name__].__dict__.update({var_name: io, 'rop_libc': rop_libc, 'rop': rop})
+	sys._getframe(1).f_globals.update({var_name: io, 'io': io, 'rop_libc': rop_libc, 'rop': rop})
+	sys.modules[__name__].__dict__.update({var_name: io, 'io': io, 'rop_libc': rop_libc, 'rop': rop})
 
 	return rt
 
@@ -1063,3 +1094,122 @@ def fmt_fuzz_all(
 
 	context.log_level = last_ctx
 	return results
+
+"""
+Following were added after seeing people using these lambdas in their
+exploits and killing the overall use of flashlib's minimalism
+"""
+
+def logbase():
+	"""
+	Logs Libc Base
+	"""
+	if libc:
+		log.info("libc base = %#x" % libc.address)
+	else:
+		log.info("No libc has been set!")
+
+def sa(delim: bytes, data: bytes, _io: pwnlib.tubes = None, **kwargs):
+	"""
+	Alternate for sendafter
+	"""
+	io = validate_tube(_io)
+	io.sendafter(encode(delim), encode(data), **kwargs)
+
+
+def sl(data: bytes, _io: pwnlib.tubes = None, **kwargs):
+	"""
+	Alternate for sendline
+	"""
+	io = validate_tube(_io)
+	io.sendline(encode(data), **kwargs)
+
+def sla(delim: bytes, data: bytes, _io: pwnlib.tubes = None, **kwargs):
+	"""
+	Alternate for sendlineafter
+	"""
+	io = validate_tube(_io)
+	io.sendlineafter(encode(delim), encode(data), **kwargs)
+
+def rn(n: int = 0, _io: pwnlib.tubes = None, **kwargs) -> bytes:
+	"""
+	Alternate for recv
+	"""
+	io = validate_tube(_io)
+	return io.recv(n, **kwargs)
+
+def ru(delim: bytes, _io: pwnlib.tubes = None, **kwargs):
+	"""
+	Alternate for recvuntil
+	"""
+	io = validate_tube(_io)
+	return io.recvuntil(encode(delim), **kwargs)
+
+def rcu(d1: bytes, d2: bytes = None, _io: pwnlib.tubes = None, **kwargs) -> bytes:
+	"""
+	Recvuntil, while also acting as recvbetween
+	"""
+	io = validate_tube(_io)
+	_ = io.recvuntil(d1, **kwargs)
+	if d2:
+		_ = io.recvuntil(d2, **kwargs)
+	return _
+
+def rl(_io: pwnlib.tubes = None, **kwargs):
+	io = validate_tube(_io)
+	return io.recvline(**kwargs)
+
+def delta(x: int, y: int) -> int:
+	"""
+	Calculates the delta.
+	"""
+	diff = (1 << context.bits) - 1
+	return (diff - x) + y
+
+def bruteforcer(
+	exploiter: Callable,
+	exploiter_args: dict = {},
+	output: str = None,
+	_io: pwnlib.tubes = None,
+	timeout: int = 10,
+	**kwargs
+) -> pwnlib.tubes:
+	"""
+	Runs an exploit N amount of time until we have "output" in
+	the stdout of the connection. Useful when bruteforcing challenges.
+
+	exploiter: Callable [REQURIED]
+		This is the function that will contain all the exploitation logic
+		for the binary. 
+		The first argument to exploiter function MUST always be 
+			`pwnlib.tube`
+		The second argument MUST be `str` i.e. the output we will
+		check if we got in the output. There's no need to `init`
+
+		The return value MUST be a bool
+
+	exploiter_args: dict
+		These are the arguments that will be passed directly to the exploiter
+		function
+	"""
+	info("Bruteforcing the exploit...")
+	old_timeout  = context.timeout
+	old_loglevel = context.log_level
+	context.timeout = timeout if timeout > old_timeout else old_timeout
+	context.log_level = 'error'
+	_io = None
+	while True:
+		io = get_ctx()
+		try:
+			if exploiter(io, output, **exploiter_args):
+				_io = io
+				break
+		except KeyboardInterrupt:
+			exit(0)
+		except Exception as E:
+			error(f"An error occurred: {E}")
+		finally:
+			io.close()
+	context.timeout = old_timeout
+	context.log_level = old_loglevel
+	return _io
