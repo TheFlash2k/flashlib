@@ -118,6 +118,44 @@ pow_solve()
 
 ---
 
+# Standalone Utilities:
+
+## get-deps
+
+This is one of my most used scripts that simply extracts all the dependencies from a Dockerfile and patches the binary for you. It was previously written in bash and had to be manually added in path but now it's part of flashlib.
+
+### Usage:
+
+```
+usage: get-deps [-h] [-b BINARY] [-d DOCKERFILE] [-o OUTFILE] [-p PATCHER] [-D] [-L] [-l LIB_PATH] [-dl LINES] [-df DEBUG_SYMBOLS_FILE] [-nd] [-f]
+
+options:
+  -h, --help            show this help message and exit
+  -b BINARY, --binary BINARY
+                        Binary to patch [Defaults to first executable found by directory iteration]
+  -d DOCKERFILE, --dockerfile DOCKERFILE
+                        Dockerfile to extract libraries from [Default: Dockerfile]
+  -o OUTFILE, --outfile OUTFILE
+                        Output file name [Default: [BINARY]_patched]
+  -p PATCHER, --patcher PATCHER
+                        The binary to use for patching [Default: patchelf]
+  -D, --debug           Add debugging symbols for libc (only APT pkg mgr works [Debian/Ubuntu])
+  -L, --lib-only        Only fetch the libraries and don't do patching
+  -l LIB_PATH, --lib-path LIB_PATH
+                        The output path where the libraries will be stored [Default: .]
+  -dl LINES, --dockerfile-lines LINES
+                        Additional lines that you want to add to the underlying Dockerfile. Must be \n seperated. Example: --lines "RUN id\nWORKDIR /app"
+  -df DEBUG_SYMBOLS_FILE, --debug-symbols-files DEBUG_SYMBOLS_FILE
+                        The name of the file in which the debugging symbols will be stored by objcopy. [Default: .debug]
+  -nd, --no-debug-symbols
+                        Do not copy debugging symbols from the original file
+  -f, --force           Force overwriting the files and folder
+```
+
+tl;dr: To use this, just run `get-deps` and if a Dockerfile is present in the folder along with a binary, it will get all the dependencies by running `ldd` on the binary, extracting all dependencies, extracting the image from `FROM/--from` and creating a new container and copying all the libraries from there and patching the binary (preserving the debugging symbols too (problem with `patchelf`).)
+
+---
+
 There's a lot more stuff which I'll keep updating as well.
 
 ---

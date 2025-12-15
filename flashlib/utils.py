@@ -8,6 +8,14 @@ from typing import Any, List
 from tqdm import *
 from enum import Enum
 from collections.abc import Callable
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Sequence, Optional, Union, IO
+
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
 
 context.terminal = ["tmux", "splitw", "-h"]
 context.arch = 'amd64'
@@ -382,7 +390,7 @@ def to_float(val: int) -> float:
 	"""
 	return struct.unpack('f', struct.pack('I', val))[0]
 
-def to_signed(n, bits=32):
+def to_signed(n: int, bits: int = 32) -> int:
 	"""
 	converts a number to it's signed equivalent
 
@@ -392,12 +400,38 @@ def to_signed(n, bits=32):
 	bits: int
 		The number of bits (Default: 32)
 	"""
-	mask = (1 << bits) - 1
-	n &= mask
-	if n & (1 << (bits - 1)):
-		n -= (1 << bits)
-	return n
-	
+	return (n + (1 << nbits)) % (1 << nbits)
+
+def exec_cmd(
+	cmd: Sequence[str], *,
+	check: bool = True,
+	capture: bool = False,
+	text: bool = True,
+	stdin: Optional[Union[int, IO]] = None,
+) -> subprocess.CompletedProcess:
+	"""
+	Execute a command and return the completed rocess
+
+	cmd: Sequence[str]
+		Command and arguments to execute
+
+	check: bool
+		Raise CalledProcessError if the command exits non-zero (Default: True)
+
+	capture: bool
+		Capture stdout and stderr (Default: False)
+
+	text: bool
+		Return output as str instead of bytes (Default: True)
+
+	stdin:
+		Stdin source (PIPE, file object, or None)
+	"""
+	if capture:
+		return subprocess.run(cmd, check=check, text=text, stdin=stdin,
+			stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+	return subprocess.run(cmd, check=check, text=text, stdin=stdin)
+
 class Limits(Enum):
 	"""
 	The limits of the different data types in C.
