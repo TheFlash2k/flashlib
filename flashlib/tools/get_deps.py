@@ -8,12 +8,9 @@ Now part of Flashlib as a whole.
 """
 
 from flashlib.utils import *
-import os
-import sys
 import argparse
 import shutil
 import sys
-from pathlib import Path
 from .utils import *
 from pwn import info as pwn_info
 
@@ -33,40 +30,6 @@ IMAGE_NAME             = "deps_extraction"
 CONTAINER_NAME         = "deps_extraction"
 LOADER                 = "ld-linux-x86-64.so.2"
 
-def which_or_die(tool: str) -> None:
-	if shutil.which(tool) is None:
-		die(f"{tool} not found in PATH. Please install it.")
-
-def realpath(p: str) -> str:
-	return str(Path(p).resolve())
-
-def get_binary() -> str:
-	cwd = Path(".").resolve()
-	endswith = ( ".sh", ".so.6", ".so.2", ".py", ".i64", ".nam", ".yml", ".json", "patched" )
-	startswith = ( "ld-", "libstd++", "libgcc", "docker" )
-	for p in cwd.iterdir():
-		if not p.is_file():
-			continue
-		name = p.name
-		if not os.access(p, os.X_OK):
-			continue
-		ended = False
-		lower = name.lower()
-		for end in endswith:
-			if lower.endswith(end.lower()):
-				ended = True
-				break
-		if ended: continue
-		for start in startswith:
-			if lower.startswith(start.lower()):
-				ended = True
-				break
-		if ended: continue
-		try:
-			return str(p)
-		except Exception as E:
-			continue
-
 def set_binary(binary: str | None) -> str:
 	if not binary:
 		binary = get_binary()
@@ -85,23 +48,7 @@ def set_binary(binary: str | None) -> str:
 	return realpath(binary)
 
 def set_dockerfile(dockerfile: str | None) -> str:
-	if not dockerfile:
-		dockerfile = DEFAULT_DOCKERFILE
-
-	p = Path(dockerfile)
-	if not p.is_file():
-		# try to find something like *dockerfile* in current dir
-		candidates = list(Path(".").glob("*dockerfile*")) + list(Path(".").glob("*Dockerfile*"))
-		candidates = [c for c in candidates if c.is_file()]
-		if candidates:
-			found = candidates[0].name
-			info(f"{RED}{dockerfile}{RESET} was not found! But found {GREEN}{found}{RESET} in the current folder, using that!")
-			dockerfile = found
-
-	p = Path(dockerfile)
-	if not p.is_file():
-		die("Dockerfile not found!")
-	return realpath(str(p))
+	return find_dockerfile(dockerfile)
 
 def set_patcher(patcher: str | None) -> str:
 	patcher = patcher or DEFAULT_PATCHER

@@ -1,5 +1,6 @@
 import os
 import sys
+from pathlib import Path
 
 # I am pretty sure that half of these functions are absolutely useless.
 GREEN = "\033[32m"
@@ -8,6 +9,9 @@ YELLOW = "\033[33m"
 BLUE = "\033[34m"
 CYAN = "\033[36m"
 RESET = "\033[0m"
+
+def realpath(p: str) -> str:
+	return str(Path(p).resolve())
 
 def log(msg: str) -> None:
 	print(f"{GREEN}[*]{RESET} {msg}")
@@ -21,6 +25,57 @@ def info(msg: str) -> None:
 def die(msg: str, code: int = 1) -> "NoReturn":
 	print(f"{RED}[!]{RESET} {msg}", file=sys.stderr)
 	raise SystemExit(code)
+
+def which_or_die(tool: str) -> None:
+	if shutil.which(tool) is None:
+		die(f"{tool} not found in PATH. Please install it.")
+
+def get_binary() -> str:
+	cwd = Path(".").resolve()
+	endswith = ( ".sh", ".so.6", ".so.2", ".py", ".i64", ".nam", ".yml", ".json", "patched" )
+	startswith = ( "ld-", "libstd++", "libgcc", "docker" )
+	for p in cwd.iterdir():
+		if not p.is_file():
+			continue
+		name = p.name
+		if not os.access(p, os.X_OK):
+			continue
+		ended = False
+		lower = name.lower()
+		for end in endswith:
+			if lower.endswith(end.lower()):
+				ended = True
+				break
+		if ended: continue
+		for start in startswith:
+			if lower.startswith(start.lower()):
+				ended = True
+				break
+		if ended: continue
+		try:
+			return str(p)
+		except Exception as E:
+			continue
+
+def find_dockerfile(dockerfile: str = None) -> str:
+	"""
+	Finds a dockerfile in the current folder if no dockerfile is provided
+	"""
+	if not dockerfile:
+		dockerfile = "Dockerfile"
+
+	p = Path(dockerfile)
+	if not p.is_file():
+		candidates = list(Path(".").glob("*dockerfile*")) + list(Path(".").glob("*Dockerfile*"))
+		candidates = [c for c in candidates if c.is_file()]
+		if candidates:
+			found = candidates[0].name
+			info(f"{RED}{dockerfile}{RESET} was not found! But found {GREEN}{found}{RESET} in the current folder, using that!")
+			dockerfile = found
+	p = Path(dockerfile)
+	if not p.is_file():
+		die("Dockerfile not found!")
+	return realpath(str(p))
 
 def extract_image_from_dockerfile(dockerfile: str) -> str:
 	"""
